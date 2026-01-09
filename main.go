@@ -65,9 +65,29 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.IsTextVisible = true
 			return m, cmd
 		case tea.KeyEnter:
-
 			if m.currentFile != nil {
 				break
+			}
+			if m.showlist {
+				item, ok := m.list.SelectedItem().(item)
+				if ok {
+					filepath := fmt.Sprintf("%s/%s", vaultDir, item.title)
+
+					content, err := os.ReadFile(filepath)
+					if err != nil {
+						log.Fatal("Error opening file")
+						return m, nil
+					}
+
+					m.textarea.SetValue(string(content))
+					f, err := os.OpenFile(filepath, os.O_RDWR, 0644)
+					if err != nil {
+						log.Fatal("Can't open file!")
+					}
+					m.currentFile = f
+					m.showlist = false
+				}
+				return m, nil
 			}
 			// todo: create a file with name which is given
 			filename := m.newFileInput.Value()
