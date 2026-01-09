@@ -71,6 +71,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if m.IsTextVisible {
 		m.newFileInput, cmd = m.newFileInput.Update(msg)
 	}
+	if m.currentFile != nil {
+		m.textarea, cmd = m.textarea.Update(msg)
+	}
 	return m, cmd
 }
 
@@ -116,6 +119,7 @@ func initialzeModel() model {
 	ta := textarea.New()
 	ta.Placeholder = "lorem ipsum"
 	ta.Focus()
+	ta.ShowLineNumbers = false
 
 	return model{
 		newFileInput:  ti,
