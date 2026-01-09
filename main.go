@@ -5,6 +5,7 @@ import (
 	"log"
 	"os"
 
+	"github.com/charmbracelet/bubbles/list"
 	"github.com/charmbracelet/bubbles/textarea"
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
@@ -14,6 +15,7 @@ import (
 var (
 	vaultDir    string
 	cursorStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("205"))
+	docStyle    = lipgloss.NewStyle().Margin(1, 2)
 )
 
 func init() {
@@ -30,7 +32,17 @@ type model struct {
 	IsTextVisible bool
 	currentFile   *os.File
 	textarea      textarea.Model
+	list          list.Model
+	showlist      bool
 }
+
+type item struct {
+	title, desc string
+}
+
+func (i item) Title() string       { return i.title }
+func (i item) Description() string { return i.desc }
+func (i item) FilterValue() string { return i.title }
 
 func (m model) Init() tea.Cmd {
 	return textinput.Blink
@@ -40,14 +52,23 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmd tea.Cmd
 
 	switch msg := msg.(type) {
+
+	case tea.WindowSizeMsg:
+		h, v := docStyle.GetFrameSize()
+		m.list.SetSize(msg.Width-h, msg.Height-v)
+
 	case tea.KeyMsg:
 		switch msg.Type {
 		case tea.KeyCtrlC, tea.KeyEsc:
 			return m, tea.Quit
-		case tea.KeyCtrlX:
+		case tea.KeyCtrlN:
 			m.IsTextVisible = true
 			return m, cmd
 		case tea.KeyEnter:
+
+			if m.currentFile != nil {
+				break
+			}
 			// todo: create a file with name which is given
 			filename := m.newFileInput.Value()
 			if filename != "" {
@@ -65,6 +86,33 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.IsTextVisible = false
 				m.newFileInput.SetValue("")
 			}
+		case tea.KeyCtrlS:
+
+			if m.currentFile == nil {
+				break
+			}
+
+			if err := m.currentFile.Truncate(0); err != nil {
+				fmt.Printf("Can't save the file T-T")
+				return m, nil
+			}
+			if _, err := m.currentFile.Seek(0, 0); err != nil {
+				fmt.Printf("Can't save the file T-T")
+				return m, nil
+			}
+			if _, err := m.currentFile.WriteString(m.textarea.Value()); err != nil {
+				fmt.Printf("Can't save the file T-T")
+				return m, nil
+			}
+			if err := m.currentFile.Close(); err != nil {
+				fmt.Println("Can't close file T-T")
+			}
+			m.currentFile = nil
+			m.textarea.SetValue("")
+			return m, nil
+		case tea.KeyCtrlL:
+			//todo show list
+			m.showlist = true
 			return m, nil
 		}
 	}
@@ -73,6 +121,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 	if m.currentFile != nil {
 		m.textarea, cmd = m.textarea.Update(msg)
+	}
+	if m.showlist {
+		m.list, cmd = m.list.Update(msg)
 	}
 	return m, cmd
 }
@@ -89,12 +140,14 @@ func (m model) View() string {
 	welcome := style.Render("Welcome to Librenotes!")
 	help := "Ctrl+X: new file - Ctrl+L: list - Esc: Quit - Ctrl+S: save - Ctrl+Q: quit"
 	view := ""
-	if m.IsTextVisible {
+	if m.showlist {
+		view = m.list.View()
+	} else if m.IsTextVisible {
 		view = m.newFileInput.View()
-	}
-	if m.currentFile != nil {
+	} else if m.currentFile != nil {
 		view = m.textarea.View()
 	}
+
 	return fmt.Sprintf("\n%s\n\n%s\n\n%s", welcome, view, help)
 }
 
@@ -121,10 +174,14 @@ func initialzeModel() model {
 	ta.Focus()
 	ta.ShowLineNumbers = false
 
+	//List
+	notelist := listFiles()
+
 	return model{
 		newFileInput:  ti,
 		IsTextVisible: false,
 		textarea:      ta,
+		list:          list.New(notelist, list.NewDefaultDelegate(), 0, 0),
 	}
 }
 
@@ -134,4 +191,31 @@ func main() {
 		fmt.Printf("ur code bad : %v", err)
 		os.Exit(1)
 	}
+}
+
+func listFiles() []list.Item {
+	items := make([]list.Item, 0)
+
+	entries, err := os.ReadDir(vaultDir)
+	if err != nil {
+		log.Fatal("Can't read from directory :(")
+	}
+
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			info, err := entry.Info()
+			if err != nil {
+				continue
+			}
+
+			modTime := info.ModTime().Format("2006-01-02 11:11")
+
+			items = append(items, item{
+				title: entry.Name(),
+				desc:  fmt.Sprintf("Modified: %s", modTime),
+			})
+		}
+	}
+
+	return items
 }
