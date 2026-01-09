@@ -55,7 +55,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case tea.WindowSizeMsg:
 		h, v := docStyle.GetFrameSize()
-		m.list.SetSize(msg.Width-h, msg.Height-v)
+		m.list.SetSize(msg.Width-h, msg.Height-v-5)
 
 	case tea.KeyMsg:
 		switch msg.Type {
@@ -177,11 +177,18 @@ func initialzeModel() model {
 	//List
 	notelist := listFiles()
 
+	finalList := list.New(notelist, list.NewDefaultDelegate(), 0, 0)
+	finalList.Title = "All Notes"
+	finalList.Styles.Title = lipgloss.NewStyle().
+		Foreground(lipgloss.Color("16")).
+		Background(lipgloss.Color("254")).
+		Padding(0, 1)
+
 	return model{
 		newFileInput:  ti,
 		IsTextVisible: false,
 		textarea:      ta,
-		list:          list.New(notelist, list.NewDefaultDelegate(), 0, 0),
+		list:          finalList,
 	}
 }
 
@@ -208,7 +215,7 @@ func listFiles() []list.Item {
 				continue
 			}
 
-			modTime := info.ModTime().Format("2006-01-02 11:11")
+			modTime := info.ModTime().Format("2006-01-02 15:04")
 
 			items = append(items, item{
 				title: entry.Name(),
