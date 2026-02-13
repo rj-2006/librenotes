@@ -66,8 +66,11 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case tea.KeyMsg:
 		switch msg.Type {
-		case tea.KeyCtrlC, tea.KeyEsc:
+		case tea.KeyCtrlC, tea.KeyCtrlQ:
 			return a, tea.Quit
+
+		case tea.KeyEsc:
+			return a.handleBack()
 
 		case tea.KeyCtrlN:
 			a.state = StateNewFile
@@ -135,6 +138,29 @@ func (a *App) View() string {
 	help := a.helpBar.Render()
 
 	return fmt.Sprintf("\n%s\n\n%s\n\n%s\n%s", welcome, content, status, help)
+}
+
+// handleBack navigates back to the previous screen
+func (a *App) handleBack() (tea.Model, tea.Cmd) {
+	switch a.state {
+	case StateEditing:
+		// Close file without saving, go back to list
+		if a.currentFile != nil {
+			a.storage.CloseNote(a.currentFile)
+			a.currentFile = nil
+		}
+		a.currentFileName = ""
+		a.textarea.SetValue("")
+		a.statusBar.SetFileInfo("", "")
+		a.state = StateList
+	case StateList, StateNewFile:
+		// Go back to welcome screen
+		a.state = StateWelcome
+	case StateWelcome:
+		// Already at welcome, quit
+		return a, tea.Quit
+	}
+	return a, nil
 }
 
 // handleEnter processes the Enter key press

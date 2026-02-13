@@ -131,7 +131,8 @@ func NewHelpBar(theme styles.Theme) *HelpBar {
 			{Key: "Ctrl+N", Desc: "new"},
 			{Key: "Ctrl+L", Desc: "list"},
 			{Key: "Ctrl+S", Desc: "save"},
-			{Key: "Esc", Desc: "quit"},
+			{Key: "Esc", Desc: "back"},
+			{Key: "Ctrl+Q", Desc: "quit"},
 		},
 	}
 }
