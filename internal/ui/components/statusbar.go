@@ -45,16 +45,10 @@ func (sb *StatusBar) SetWordCount(content string) {
 
 // Render renders the status bar
 func (sb *StatusBar) Render(width int) string {
-	style := lipgloss.NewStyle().
-		Background(sb.theme.StatusBar).
-		Foreground(sb.theme.StatusBarText).
-		Padding(0, 1).
-		Width(width)
-
 	left := sb.renderLeft()
 	right := sb.renderRight()
 
-	// Calculate padding needed
+	// Calculate padding
 	leftWidth := lipgloss.Width(left)
 	rightWidth := lipgloss.Width(right)
 	padding := width - leftWidth - rightWidth - 2
@@ -63,33 +57,57 @@ func (sb *StatusBar) Render(width int) string {
 		padding = 0
 	}
 
-	content := left + fmt.Sprintf("%*s", padding, "") + right
-	return style.Render(content)
+	// Join with padding
+	return left + fmt.Sprintf("%*s", padding, "") + right
 }
 
 func (sb *StatusBar) renderLeft() string {
+	style := lipgloss.NewStyle().
+		Foreground(sb.theme.Primary).
+		Bold(true)
+
 	if sb.currentFile == "" {
-		return "  LibreNotes"
+		return style.Render("LibreNotes")
 	}
-	return fmt.Sprintf("  %s", sb.currentFile)
+	return style.Render(fmt.Sprintf("● %s", sb.currentFile))
 }
 
 func (sb *StatusBar) renderRight() string {
-	var info string
+	var parts []string
+
+	// Word count
 	if sb.wordCount > 0 {
-		info = fmt.Sprintf("%d words | %d chars", sb.wordCount, sb.charCount)
+		wcStyle := lipgloss.NewStyle().
+			Foreground(sb.theme.Secondary)
+		parts = append(parts, wcStyle.Render(fmt.Sprintf("%d words", sb.wordCount)))
+
+		ccStyle := lipgloss.NewStyle().
+			Foreground(sb.theme.Muted)
+		parts = append(parts, ccStyle.Render(fmt.Sprintf("%d chars", sb.charCount)))
 	}
 
+	// Time
 	if sb.showTime {
+		timeStyle := lipgloss.NewStyle().
+			Foreground(sb.theme.Muted)
 		now := time.Now().Format("15:04")
-		if info != "" {
-			info = fmt.Sprintf("%s | %s", info, now)
-		} else {
-			info = now
-		}
+		parts = append(parts, timeStyle.Render(now))
 	}
 
-	return info + "  "
+	// Join with separators
+	var result string
+	separator := lipgloss.NewStyle().
+		Foreground(sb.theme.Muted).
+		Render(" │ ")
+
+	for i, part := range parts {
+		if i > 0 {
+			result += separator
+		}
+		result += part
+	}
+
+	return " " + result + " "
 }
 
 func countWords(content string) int {
@@ -146,21 +164,24 @@ func (hb *HelpBar) SetItems(items []HelpItem) {
 func (hb *HelpBar) Render() string {
 	var items []string
 
-	for _, item := range hb.items {
+	for i, item := range hb.items {
 		keyStyle := lipgloss.NewStyle().
 			Foreground(hb.theme.Primary).
 			Bold(true)
 
 		descStyle := lipgloss.NewStyle().
-			Foreground(hb.theme.HelpText)
+			Foreground(hb.theme.Muted)
 
 		rendered := keyStyle.Render(item.Key) + " " + descStyle.Render(item.Desc)
 		items = append(items, rendered)
+
+		// Add separator if not last item
+		if i < len(hb.items)-1 {
+			items = append(items, lipgloss.NewStyle().
+				Foreground(hb.theme.Muted).
+				Render(" • "))
+		}
 	}
 
-	separator := lipgloss.NewStyle().
-		Foreground(hb.theme.Muted).
-		Render(" • ")
-
-	return lipgloss.JoinHorizontal(lipgloss.Center, items...) + separator
+	return lipgloss.JoinHorizontal(lipgloss.Center, items...)
 }

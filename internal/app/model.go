@@ -38,6 +38,7 @@ type App struct {
 	list         list.Model
 	statusBar    *components.StatusBar
 	helpBar      *components.HelpBar
+	homepage     *components.Homepage
 
 	// Current file
 	currentFile     *os.File

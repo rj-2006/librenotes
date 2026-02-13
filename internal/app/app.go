@@ -32,6 +32,7 @@ func NewApp(cfg *config.Config) (*App, error) {
 	lst := newNoteList(theme, store)
 	sb := components.NewStatusBar(theme)
 	hb := components.NewHelpBar(theme)
+	hp := components.NewHomepage(theme)
 
 	return &App{
 		state:        StateWelcome,
@@ -43,6 +44,7 @@ func NewApp(cfg *config.Config) (*App, error) {
 		list:         lst,
 		statusBar:    sb,
 		helpBar:      hb,
+		homepage:     hp,
 	}, nil
 }
 
@@ -64,6 +66,10 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		h, v := lipgloss.NewStyle().Margin(1, 2).GetFrameSize()
 		a.list.SetSize(msg.Width-h, msg.Height-v-5)
 
+		// Update homepage size
+		a.homepage.SetSize(msg.Width-4, msg.Height-10)
+		a.homepage.SetRecentFiles(a.recentFiles)
+
 	case tea.KeyMsg:
 		switch msg.Type {
 		case tea.KeyCtrlC, tea.KeyCtrlQ:
@@ -83,8 +89,27 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			a.refreshList()
 			return a, cmd
 
+		case tea.KeyUp:
+			if a.state == StateWelcome {
+				a.homepage.SelectPrev()
+			}
+
+		case tea.KeyDown:
+			if a.state == StateWelcome {
+				a.homepage.SelectNext()
+			}
+
 		case tea.KeyEnter:
+			// Don't intercept Enter when editing - let textarea handle it
+			if a.state == StateEditing {
+				break
+			}
 			return a.handleEnter()
+
+		case tea.KeyCtrlT:
+			if a.state == StateWelcome {
+				return a.handleHomepageAction("settings")
+			}
 
 		case tea.KeyCtrlS:
 			return a.handleSave()
@@ -108,19 +133,11 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 // View renders the current view
 func (a *App) View() string {
-	// Title
-	titleStyle := lipgloss.NewStyle().
-		Bold(true).
-		Foreground(a.theme.TitleFg).
-		Background(a.theme.TitleBg).
-		PaddingLeft(2).
-		PaddingRight(2)
-
-	welcome := titleStyle.Render("Welcome to LibreNotes!")
-
 	// Main content based on state
 	var content string
 	switch a.state {
+	case StateWelcome:
+		content = a.homepage.Render()
 	case StateList:
 		content = a.list.View()
 	case StateNewFile:
@@ -137,7 +154,7 @@ func (a *App) View() string {
 	// Help bar
 	help := a.helpBar.Render()
 
-	return fmt.Sprintf("\n%s\n\n%s\n\n%s\n%s", welcome, content, status, help)
+	return fmt.Sprintf("\n%s\n\n%s\n%s", content, status, help)
 }
 
 // handleBack navigates back to the previous screen
@@ -156,6 +173,7 @@ func (a *App) handleBack() (tea.Model, tea.Cmd) {
 	case StateList, StateNewFile:
 		// Go back to welcome screen
 		a.state = StateWelcome
+		a.homepage.SetRecentFiles(a.recentFiles)
 	case StateWelcome:
 		// Already at welcome, quit
 		return a, tea.Quit
@@ -166,11 +184,88 @@ func (a *App) handleBack() (tea.Model, tea.Cmd) {
 // handleEnter processes the Enter key press
 func (a *App) handleEnter() (tea.Model, tea.Cmd) {
 	switch a.state {
+	case StateWelcome:
+		action := a.homepage.GetSelectedAction()
+		return a.handleHomepageAction(action)
 	case StateList:
 		return a.openSelectedNote()
 	case StateNewFile:
 		return a.createNewNote()
 	}
+	return a, nil
+}
+
+// handleHomepageAction handles menu actions from the homepage
+func (a *App) handleHomepageAction(action string) (tea.Model, tea.Cmd) {
+	switch action {
+	case "new":
+		a.state = StateNewFile
+		a.newFileInput.Focus()
+		return a, nil
+	case "open":
+		// Open the first recent file or go to list
+		if len(a.recentFiles) > 0 {
+			return a.openRecentFile(a.recentFiles[0])
+		}
+		a.state = StateList
+		a.refreshList()
+		return a, nil
+	case "list":
+		a.state = StateList
+		a.refreshList()
+		return a, nil
+	case "settings":
+		// Cycle to next theme
+		themes := styles.GetAvailableThemes()
+		currentIdx := 0
+		for i, t := range themes {
+			if t == a.config.GetTheme() {
+				currentIdx = i
+				break
+			}
+		}
+		nextIdx := (currentIdx + 1) % len(themes)
+		a.config.SetTheme(themes[nextIdx])
+		a.theme = styles.GetTheme(themes[nextIdx])
+		// Update all components with new theme
+		a.homepage = components.NewHomepage(a.theme)
+		a.homepage.SetRecentFiles(a.recentFiles) // Preserve recent files
+		a.homepage.SetSize(a.width-4, a.height-10)
+		a.statusBar = components.NewStatusBar(a.theme)
+		a.helpBar = components.NewHelpBar(a.theme)
+		a.list = newNoteList(a.theme, a.storage)
+		// Resize the list to match current window
+		h, v := lipgloss.NewStyle().Margin(1, 2).GetFrameSize()
+		a.list.SetSize(a.width-h, a.height-v-5)
+		a.newFileInput = newFileInput(a.theme)
+		a.newFileInput.Focus() // Refocus the input
+		a.textarea = newTextArea(a.theme)
+		return a, nil
+	}
+	return a, nil
+}
+
+// openRecentFile opens a file from the recent files list
+func (a *App) openRecentFile(filename string) (tea.Model, tea.Cmd) {
+	content, err := a.storage.ReadNote(filename)
+	if err != nil {
+		return a, nil
+	}
+
+	file, err := a.storage.OpenNote(filename)
+	if err != nil {
+		return a, nil
+	}
+
+	a.currentFile = file
+	a.currentFileName = filename
+	a.textarea.SetValue(string(content))
+	a.statusBar.SetFileInfo(filename, string(content))
+	a.state = StateEditing
+
+	// Add to recent files (move to top)
+	a.addToRecentFiles(filename)
+
 	return a, nil
 }
 
@@ -248,6 +343,7 @@ func (a *App) handleSave() (tea.Model, tea.Cmd) {
 	a.textarea.SetValue("")
 	a.state = StateWelcome
 	a.statusBar.SetFileInfo("", "")
+	a.homepage.SetRecentFiles(a.recentFiles)
 
 	return a, nil
 }
@@ -298,9 +394,13 @@ func newFileInput(theme styles.Theme) textinput.Model {
 	ti.Width = 40
 
 	cursorStyle := lipgloss.NewStyle().Foreground(theme.Cursor)
+	textStyle := lipgloss.NewStyle().Foreground(theme.Foreground)
+	placeholderStyle := lipgloss.NewStyle().Foreground(theme.Muted)
+
 	ti.Cursor.Style = cursorStyle
 	ti.PromptStyle = cursorStyle
-	ti.TextStyle = cursorStyle
+	ti.TextStyle = textStyle
+	ti.PlaceholderStyle = placeholderStyle
 
 	return ti
 }
@@ -313,6 +413,8 @@ func newTextArea(theme styles.Theme) textarea.Model {
 
 	// Style the textarea with theme colors
 	ta.Prompt = ""
+	cursorStyle := lipgloss.NewStyle().Foreground(theme.Cursor)
+	ta.Cursor.Style = cursorStyle
 
 	return ta
 }
@@ -328,7 +430,14 @@ func newNoteList(theme styles.Theme, store *storage.Storage) list.Model {
 		}
 	}
 
-	lst := list.New(items, list.NewDefaultDelegate(), 0, 0)
+	// Create delegate with theme colors
+	delegate := list.NewDefaultDelegate()
+	delegate.Styles.NormalTitle = lipgloss.NewStyle().Foreground(theme.Foreground)
+	delegate.Styles.NormalDesc = lipgloss.NewStyle().Foreground(theme.Muted)
+	delegate.Styles.SelectedTitle = lipgloss.NewStyle().Foreground(theme.Primary).Bold(true)
+	delegate.Styles.SelectedDesc = lipgloss.NewStyle().Foreground(theme.Secondary)
+
+	lst := list.New(items, delegate, 0, 0)
 	lst.Title = "All Notes"
 	lst.Styles.Title = lipgloss.NewStyle().
 		Foreground(theme.TitleFg).
