@@ -7,7 +7,9 @@ import (
 	"github.com/charmbracelet/bubbles/list"
 	"github.com/charmbracelet/bubbles/textarea"
 	"github.com/charmbracelet/bubbles/textinput"
+	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/glamour"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/rj-2006/librenotes/internal/config"
 	"github.com/rj-2006/librenotes/internal/storage"
@@ -15,7 +17,6 @@ import (
 	"github.com/rj-2006/librenotes/internal/ui/styles"
 )
 
-// NewApp creates a new application instance
 func NewApp(cfg *config.Config) (*App, error) {
 	// Initialize storage
 	store := storage.NewStorage(cfg.GetVaultDir())
@@ -70,6 +71,20 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.homepage.SetSize(msg.Width-4, msg.Height-10)
 		a.homepage.SetRecentFiles(a.recentFiles)
 
+		// Update preview viewport if active
+		if a.isPreview {
+			vpWidth := msg.Width - 4
+			if vpWidth < 40 {
+				vpWidth = 78
+			}
+			vpHeight := msg.Height - 8
+			if vpHeight < 10 {
+				vpHeight = 20
+			}
+			a.previewViewport.Width = vpWidth
+			a.previewViewport.Height = vpHeight
+		}
+
 	case tea.KeyMsg:
 		switch msg.Type {
 		case tea.KeyCtrlC, tea.KeyCtrlQ:
@@ -113,6 +128,11 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		case tea.KeyCtrlS:
 			return a.handleSave()
+
+		case tea.KeyCtrlP:
+			if a.state == StateEditing {
+				return a, a.togglePreview()
+			}
 		}
 	}
 
@@ -121,9 +141,16 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case StateNewFile:
 		a.newFileInput, cmd = a.newFileInput.Update(msg)
 	case StateEditing:
-		a.textarea, cmd = a.textarea.Update(msg)
-		// Update word count
-		a.statusBar.SetWordCount(a.textarea.Value())
+		if a.isPreview {
+			// Handle viewport scrolling
+			var vpCmd tea.Cmd
+			a.previewViewport, vpCmd = a.previewViewport.Update(msg)
+			cmd = vpCmd
+		} else {
+			a.textarea, cmd = a.textarea.Update(msg)
+			// Update word count
+			a.statusBar.SetWordCount(a.textarea.Value())
+		}
 	case StateList:
 		a.list, cmd = a.list.Update(msg)
 	}
@@ -143,7 +170,11 @@ func (a *App) View() string {
 	case StateNewFile:
 		content = a.newFileInput.View()
 	case StateEditing:
-		content = a.textarea.View()
+		if a.isPreview {
+			content = a.previewViewport.View()
+		} else {
+			content = a.textarea.View()
+		}
 	default:
 		content = ""
 	}
@@ -161,6 +192,12 @@ func (a *App) View() string {
 func (a *App) handleBack() (tea.Model, tea.Cmd) {
 	switch a.state {
 	case StateEditing:
+		// If in preview mode, exit preview first before closing file
+		if a.isPreview {
+			a.isPreview = false
+			a.previewViewport = viewport.Model{}
+			return a, nil
+		}
 		// Close file without saving, go back to list
 		if a.currentFile != nil {
 			a.storage.CloseNote(a.currentFile)
@@ -445,4 +482,69 @@ func newNoteList(theme styles.Theme, store *storage.Storage) list.Model {
 		Padding(0, 1)
 
 	return lst
+}
+
+// rendering the markdown file
+func (a *App) renderMarkdown(content string) (string, error) {
+	renderer, err := glamour.NewTermRenderer(
+		glamour.WithAutoStyle(),
+	)
+	if err != nil {
+		return "", err
+	}
+
+	rendered, err := renderer.Render(content)
+	if err != nil {
+		return "", err
+	}
+
+	return rendered, nil
+}
+
+func (a *App) togglePreview() tea.Cmd {
+	if a.isPreview {
+		a.isPreview = false
+		a.previewViewport = viewport.Model{}
+	} else {
+		// Calculate viewport dimensions
+		vpWidth := a.width - 4
+		if vpWidth < 40 {
+			vpWidth = 78
+		}
+		vpHeight := a.height - 8
+		if vpHeight < 10 {
+			vpHeight = 20
+		}
+
+		// Create viewport with themed border
+		vp := viewport.New(vpWidth, vpHeight)
+		vp.Style = lipgloss.NewStyle().
+			BorderStyle(lipgloss.RoundedBorder()).
+			BorderForeground(a.theme.Border).
+			PaddingRight(2)
+
+		// Calculate glamour render width accounting for viewport frame and gutter
+		glamourGutter := 2
+		glamourRenderWidth := vpWidth - vp.Style.GetHorizontalFrameSize() - glamourGutter
+
+		// Create glamour renderer with word wrap
+		renderer, err := glamour.NewTermRenderer(
+			glamour.WithAutoStyle(),
+			glamour.WithWordWrap(glamourRenderWidth),
+		)
+		if err != nil {
+			return nil
+		}
+
+		// Render markdown content
+		rendered, err := renderer.Render(a.textarea.Value())
+		if err != nil {
+			return nil
+		}
+
+		vp.SetContent(rendered)
+		a.previewViewport = vp
+		a.isPreview = true
+	}
+	return nil
 }
