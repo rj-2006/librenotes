@@ -249,6 +249,6 @@ func (h *Homepage) getMenuItems() []MenuItem {
 		{Label: "New File", KeyHint: "Ctrl+N", Action: "new"},
 		{Label: "Open File", KeyHint: "Enter", Action: "open"},
 		{Label: "View List", KeyHint: "Ctrl+L", Action: "list"},
-		{Label: "Settings", KeyHint: "Ctrl+T", Action: "settings"},
+		{Label: "Change Theme", KeyHint: "Ctrl+T", Action: "settings"},
 	}
 }
