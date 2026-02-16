@@ -6,7 +6,6 @@ import (
 	"github.com/charmbracelet/bubbles/list"
 	"github.com/charmbracelet/bubbles/textarea"
 	"github.com/charmbracelet/bubbles/textinput"
-	"github.com/charmbracelet/bubbles/viewport"
 	"github.com/rj-2006/librenotes/internal/config"
 	"github.com/rj-2006/librenotes/internal/storage"
 	"github.com/rj-2006/librenotes/internal/ui/components"
@@ -17,7 +16,6 @@ type ViewState int
 
 const (
 	StateWelcome ViewState = iota
-	StatePreview ViewState = iota
 	StateList
 	StateNewFile
 	StateEditing
@@ -50,10 +48,6 @@ type App struct {
 	// Window dimensions
 	width  int
 	height int
-
-	// checks if current state is preview
-	isPreview       bool
-	previewViewport viewport.Model
 }
 
 // NoteItem represents a note in the list
