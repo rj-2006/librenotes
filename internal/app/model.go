@@ -65,6 +65,9 @@ type App struct {
 	// Search
 	searchInput textinput.Model
 	allNotes    []list.Item // Store all notes for searching
+
+	// Autosave
+	lastSavedContent string // Track last saved content to detect changes
 }
 
 // NoteItem represents a note or folder in the list

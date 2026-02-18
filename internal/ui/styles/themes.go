@@ -26,47 +26,47 @@ type Theme struct {
 
 // Available themes
 var (
-	// Cyberpunk theme - neon colors on dark background
+	// Cyberpunk theme - improved neon colors on dark background
 	CyberpunkTheme = Theme{
 		Name:          "cyberpunk",
-		Primary:       lipgloss.Color("#00f0ff"), // Cyan
-		Secondary:     lipgloss.Color("#ff00ff"), // Magenta
-		Background:    lipgloss.Color("#0a0a0f"), // Very dark
-		Foreground:    lipgloss.Color("#e0e0ff"), // Light bluish white
-		Accent:        lipgloss.Color("#ffff00"), // Yellow
-		Success:       lipgloss.Color("#00ff88"), // Bright green
-		Error:         lipgloss.Color("#ff3366"), // Pink-red
-		Warning:       lipgloss.Color("#ffaa00"), // Orange
-		Muted:         lipgloss.Color("#666699"), // Muted purple
-		Border:        lipgloss.Color("#00f0ff"), // Cyan border
-		Cursor:        lipgloss.Color("#ff00ff"), // Magenta cursor
-		Selection:     lipgloss.Color("#ff00ff"), // Magenta selection
-		StatusBar:     lipgloss.Color("#1a1a2e"), // Dark blue-purple
-		StatusBarText: lipgloss.Color("#00f0ff"), // Cyan text
-		TitleBg:       lipgloss.Color("#ff00ff"), // Magenta background
-		TitleFg:       lipgloss.Color("#000000"), // Black text
-		HelpText:      lipgloss.Color("#8888aa"), // Muted help text
+		Primary:       lipgloss.Color("#00d4ff"), // Electric cyan - vibrant but not blinding
+		Secondary:     lipgloss.Color("#ff2a6d"), // Hot pink - better contrast
+		Background:    lipgloss.Color("#0d0221"), // Deep purple-black
+		Foreground:    lipgloss.Color("#f0f0ff"), // Soft white
+		Accent:        lipgloss.Color("#ffd60a"), // Golden yellow
+		Success:       lipgloss.Color("#39ff14"), // Neon green
+		Error:         lipgloss.Color("#ff073a"), // Electric red
+		Warning:       lipgloss.Color("#ff9f1c"), // Amber
+		Muted:         lipgloss.Color("#5c5c8a"), // Desaturated purple
+		Border:        lipgloss.Color("#00d4ff"), // Cyan border
+		Cursor:        lipgloss.Color("#ff2a6d"), // Hot pink cursor
+		Selection:     lipgloss.Color("#ff2a6d"), // Hot pink selection
+		StatusBar:     lipgloss.Color("#1a1a3e"), // Dark purple
+		StatusBarText: lipgloss.Color("#00d4ff"), // Electric cyan
+		TitleBg:       lipgloss.Color("#ff2a6d"), // Hot pink background
+		TitleFg:       lipgloss.Color("#0d0221"), // Deep purple-black text
+		HelpText:      lipgloss.Color("#7a7ab8"), // Muted purple-blue
 	}
 
-	// Catppuccin Mocha theme - warm dark theme
+	// Catppuccin Mocha theme - improved warm dark theme
 	CatppuccinMochaTheme = Theme{
 		Name:          "catppuccin-mocha",
-		Primary:       lipgloss.Color("#89b4fa"), // Blue
-		Secondary:     lipgloss.Color("#cba6f7"), // Lavender
-		Background:    lipgloss.Color("#1e1e2e"), // Dark background
+		Primary:       lipgloss.Color("#8aadf4"), // Soft blue - more readable
+		Secondary:     lipgloss.Color("#b4befe"), // Periwinkle - distinct from primary
+		Background:    lipgloss.Color("#181825"), // Darker background for contrast
 		Foreground:    lipgloss.Color("#cdd6f4"), // Text
-		Accent:        lipgloss.Color("#f9e2af"), // Yellow
+		Accent:        lipgloss.Color("#f5e0dc"), // Rosewater - softer accent
 		Success:       lipgloss.Color("#a6e3a1"), // Green
 		Error:         lipgloss.Color("#f38ba8"), // Red
 		Warning:       lipgloss.Color("#fab387"), // Peach
 		Muted:         lipgloss.Color("#6c7086"), // Overlay0
-		Border:        lipgloss.Color("#89b4fa"), // Blue border
-		Cursor:        lipgloss.Color("#cba6f7"), // Lavender cursor
-		Selection:     lipgloss.Color("#585b70"), // Surface1
-		StatusBar:     lipgloss.Color("#181825"), // Mantle
+		Border:        lipgloss.Color("#8aadf4"), // Soft blue border
+		Cursor:        lipgloss.Color("#b4befe"), // Periwinkle cursor
+		Selection:     lipgloss.Color("#45475a"), // Surface0 - lighter for visibility
+		StatusBar:     lipgloss.Color("#11111b"), // Crust - darker
 		StatusBarText: lipgloss.Color("#cdd6f4"), // Text
-		TitleBg:       lipgloss.Color("#89b4fa"), // Blue background
-		TitleFg:       lipgloss.Color("#1e1e2e"), // Dark text
+		TitleBg:       lipgloss.Color("#8aadf4"), // Soft blue background
+		TitleFg:       lipgloss.Color("#181825"), // Dark text
 		HelpText:      lipgloss.Color("#9399b2"), // Overlay2
 	}
 

@@ -88,6 +88,42 @@ func (s *Storage) ListNotes(folder string) ([]Note, []Folder, error) {
 	return notes, folders, nil
 }
 
+// ListAllNotesRecursively returns all notes from all folders recursively
+func (s *Storage) ListAllNotesRecursively() ([]Note, error) {
+	var allNotes []Note
+
+	// Walk the vault directory recursively
+	err := filepath.Walk(s.vaultDir, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return nil // Skip errors, continue walking
+		}
+
+		// Skip directories
+		if info.IsDir() {
+			return nil
+		}
+
+		// Get relative path from vault dir
+		relPath, err := filepath.Rel(s.vaultDir, path)
+		if err != nil {
+			return nil
+		}
+
+		modTime := info.ModTime()
+		allNotes = append(allNotes, Note{
+			Title:       relPath,
+			Path:        path,
+			Folder:      filepath.Dir(relPath),
+			ModTime:     modTime,
+			Description: fmt.Sprintf("Modified: %s", modTime.Format("2006-01-02 15:04")),
+		})
+
+		return nil
+	})
+
+	return allNotes, err
+}
+
 // ReadNote reads the content of a note
 func (s *Storage) ReadNote(filename string) ([]byte, error) {
 	filepath := filepath.Join(s.vaultDir, filename)

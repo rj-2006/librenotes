@@ -2,6 +2,9 @@
 
 A beautiful terminal-based note-taking application for developers who prefer the command line. Built with Go and the Charm ecosystem.
 
+<!-- TODO: Add demo GIF here -->
+<!-- ![Demo](demo.gif) -->
+
 ![Go Version](https://img.shields.io/badge/go-1.25.5-blue)
 ![License](https://img.shields.io/badge/license-MIT-green)
 

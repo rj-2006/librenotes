@@ -3,6 +3,7 @@ package app
 import (
 	"fmt"
 	"path/filepath"
+	"time"
 
 	"github.com/charmbracelet/bubbles/list"
 	"github.com/charmbracelet/bubbles/textarea"
@@ -35,7 +36,26 @@ func NewApp(cfg *config.Config) (*App, error) {
 	hb := components.NewHelpBar(theme)
 	hp := components.NewHomepage(theme)
 
-	return &App{
+	// Initialize search input
+	searchInput := newSearchInput(theme)
+
+	// Load all notes for search (recursively from all folders)
+	allNotes, _ := store.ListAllNotesRecursively()
+	items := make([]list.Item, len(allNotes))
+	for i, note := range allNotes {
+		displayTitle := note.Title
+		if len(displayTitle) > 30 {
+			displayTitle = displayTitle[:27] + "..."
+		}
+		items[i] = NoteItem{
+			title:       "📝 " + displayTitle,
+			description: note.Description,
+			isFolder:    false,
+			folderPath:  note.Title, // Store full path here
+		}
+	}
+
+	app := &App{
 		state:        StateWelcome,
 		config:       cfg,
 		storage:      store,
@@ -46,12 +66,57 @@ func NewApp(cfg *config.Config) (*App, error) {
 		statusBar:    sb,
 		helpBar:      hb,
 		homepage:     hp,
-	}, nil
+		searchInput:  searchInput,
+		allNotes:     items,
+		recentFiles:  cfg.GetRecentFiles(),
+	}
+
+	// Set recent files on homepage
+	app.homepage.SetRecentFiles(app.recentFiles)
+
+	return app, nil
 }
 
 // Init initializes the app
 func (a *App) Init() tea.Cmd {
+	// Start autosave timer if enabled
+	if a.config.GetAutoSave() {
+		return tea.Batch(
+			textinput.Blink,
+			a.startAutoSave(),
+		)
+	}
 	return textinput.Blink
+}
+
+// startAutoSave starts the autosave timer
+func (a *App) startAutoSave() tea.Cmd {
+	interval := time.Duration(a.config.GetAutoSaveInterval()) * time.Second
+	return tea.Every(interval, func(t time.Time) tea.Msg {
+		return autoSaveMsg{}
+	})
+}
+
+// autoSaveMsg is sent when it's time to autosave
+type autoSaveMsg struct{}
+
+// autoSave saves the current note if it has unsaved changes
+func (a *App) autoSave() {
+	if a.state != StateEditing || a.currentFile == nil {
+		return
+	}
+
+	currentContent := a.textarea.Value()
+	if currentContent == a.lastSavedContent {
+		return // No changes to save
+	}
+
+	// Save the content
+	if err := a.storage.SaveNote(a.currentFile, currentContent); err != nil {
+		return // Silent fail on autosave
+	}
+
+	a.lastSavedContent = currentContent
 }
 
 // Update handles messages and updates the app state
@@ -59,6 +124,10 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmd tea.Cmd
 
 	switch msg := msg.(type) {
+	case autoSaveMsg:
+		a.autoSave()
+		return a, a.startAutoSave() // Restart timer
+
 	case tea.WindowSizeMsg:
 		a.width = msg.Width
 		a.height = msg.Height
@@ -111,6 +180,10 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if a.state == StateEditing {
 				break
 			}
+			// In search mode, select the highlighted item
+			if a.state == StateSearch {
+				return a.handleEnter()
+			}
 			return a.handleEnter()
 
 		case tea.KeyCtrlT:
@@ -137,6 +210,11 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 
 		case tea.KeyRunes:
+			if a.state == StateList && msg.String() == "/" {
+				a.state = StateSearch
+				a.searchInput.Focus()
+				return a, textinput.Blink
+			}
 			if a.state == StateConfirmDelete {
 				switch msg.String() {
 				case "y", "Y":
@@ -171,6 +249,15 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 	case StateList:
 		a.list, cmd = a.list.Update(msg)
+	case StateSearch:
+		var searchCmd tea.Cmd
+		a.searchInput, searchCmd = a.searchInput.Update(msg)
+		// Also update the list so user can navigate with arrow keys
+		var listCmd tea.Cmd
+		a.list, listCmd = a.list.Update(msg)
+		cmd = tea.Batch(searchCmd, listCmd)
+		// Perform fuzzy search
+		a.performSearch(a.searchInput.Value())
 	}
 
 	return a, cmd
@@ -199,6 +286,9 @@ func (a *App) View() string {
 			Bold(true).
 			Padding(2)
 		content = confirmStyle.Render(fmt.Sprintf("Delete '%s'?\n\n[y]es / [n]o", a.fileToDelete))
+	case StateSearch:
+		// Show search input and list
+		content = a.searchInput.View() + "\n\n" + a.list.View()
 	default:
 		content = ""
 	}
@@ -236,6 +326,11 @@ func (a *App) handleBack() (tea.Model, tea.Cmd) {
 		a.state = StateWelcome
 		a.currentFolder = "" // Reset folder navigation
 		a.homepage.SetRecentFiles(a.recentFiles)
+	case StateSearch:
+		// Exit search mode and return to list
+		a.state = StateList
+		a.searchInput.SetValue("")
+		a.refreshList()
 	case StateWelcome:
 		// Already at welcome, quit
 		return a, tea.Quit
@@ -251,9 +346,44 @@ func (a *App) handleEnter() (tea.Model, tea.Cmd) {
 		return a.handleHomepageAction(action)
 	case StateList:
 		return a.openSelectedNote()
+	case StateSearch:
+		// Open the selected note from search results
+		item, ok := a.list.SelectedItem().(NoteItem)
+		if ok && !item.isFolder {
+			// Clear search and open note
+			a.searchInput.SetValue("")
+			a.state = StateList
+			return a.openNoteByPath(item.folderPath)
+		}
+		return a, nil
 	case StateNewFile:
 		return a.createNewNote()
 	}
+	return a, nil
+}
+
+// openNoteByPath opens a note given its full path
+func (a *App) openNoteByPath(fullPath string) (tea.Model, tea.Cmd) {
+	content, err := a.storage.ReadNote(fullPath)
+	if err != nil {
+		return a, nil
+	}
+
+	file, err := a.storage.OpenNote(fullPath)
+	if err != nil {
+		return a, nil
+	}
+
+	a.currentFile = file
+	a.currentFileName = fullPath
+	a.textarea.SetValue(string(content))
+	a.lastSavedContent = string(content) // Track for autosave
+	a.statusBar.SetFileInfo(fullPath, string(content))
+	a.state = StateEditing
+
+	// Add to recent files
+	a.addToRecentFiles(fullPath)
+
 	return a, nil
 }
 
@@ -322,6 +452,7 @@ func (a *App) openRecentFile(filename string) (tea.Model, tea.Cmd) {
 	a.currentFile = file
 	a.currentFileName = filename
 	a.textarea.SetValue(string(content))
+	a.lastSavedContent = string(content) // Track for autosave
 	a.statusBar.SetFileInfo(filename, string(content))
 	a.state = StateEditing
 
@@ -373,6 +504,7 @@ func (a *App) openSelectedNote() (tea.Model, tea.Cmd) {
 	a.currentFile = file
 	a.currentFileName = fullPath
 	a.textarea.SetValue(string(content))
+	a.lastSavedContent = string(content) // Track for autosave
 	a.statusBar.SetFileInfo(fullPath, string(content))
 	a.state = StateEditing
 
@@ -504,6 +636,13 @@ func (a *App) addToRecentFiles(filename string) {
 	if len(a.recentFiles) > 10 {
 		a.recentFiles = a.recentFiles[:10]
 	}
+
+	// Save to config
+	a.config.SetRecentFiles(a.recentFiles)
+	a.config.Save()
+
+	// Update homepage
+	a.homepage.SetRecentFiles(a.recentFiles)
 }
 
 // removeFromRecentFiles removes a file from recent files list
@@ -514,6 +653,13 @@ func (a *App) removeFromRecentFiles(filename string) {
 			break
 		}
 	}
+
+	// Save to config
+	a.config.SetRecentFiles(a.recentFiles)
+	a.config.Save()
+
+	// Update homepage
+	a.homepage.SetRecentFiles(a.recentFiles)
 }
 
 // Helper functions for creating UI components
@@ -534,6 +680,90 @@ func newFileInput(theme styles.Theme) textinput.Model {
 	ti.PlaceholderStyle = placeholderStyle
 
 	return ti
+}
+
+func newSearchInput(theme styles.Theme) textinput.Model {
+	ti := textinput.New()
+	ti.Placeholder = "Search notes..."
+	ti.Focus()
+	ti.CharLimit = 100
+	ti.Width = 50
+
+	cursorStyle := lipgloss.NewStyle().Foreground(theme.Cursor)
+	textStyle := lipgloss.NewStyle().Foreground(theme.Foreground)
+	placeholderStyle := lipgloss.NewStyle().Foreground(theme.Muted)
+
+	ti.Cursor.Style = cursorStyle
+	ti.Prompt = "/"
+	ti.PromptStyle = cursorStyle
+	ti.TextStyle = textStyle
+	ti.PlaceholderStyle = placeholderStyle
+
+	return ti
+}
+
+// performSearch filters notes using fuzzy matching
+func (a *App) performSearch(query string) {
+	if query == "" {
+		// Show all notes
+		a.list.SetItems(a.allNotes)
+		return
+	}
+
+	// Use fuzzy matching
+	var matches []list.Item
+	for _, item := range a.allNotes {
+		if noteItem, ok := item.(NoteItem); ok {
+			// Search in both title and folder path
+			searchText := noteItem.title
+			if noteItem.folderPath != "" {
+				searchText = noteItem.folderPath
+			}
+			// Remove emoji prefix for search
+			if len(searchText) > 4 && (searchText[:4] == "📝 " || searchText[:4] == "📁 ") {
+				searchText = searchText[4:]
+			}
+
+			// Simple contains search (fuzzy would require importing the library)
+			if containsIgnoreCase(searchText, query) {
+				matches = append(matches, item)
+			}
+		}
+	}
+	a.list.SetItems(matches)
+}
+
+// containsIgnoreCase checks if str contains substr (case-insensitive)
+func containsIgnoreCase(str, substr string) bool {
+	return len(substr) == 0 ||
+		(len(str) >= len(substr) &&
+			(len(substr) == 0 ||
+				findSubstringIgnoreCase(str, substr)))
+}
+
+func findSubstringIgnoreCase(str, substr string) bool {
+	strLower := toLower(str)
+	substrLower := toLower(substr)
+	for i := 0; i <= len(strLower)-len(substrLower); i++ {
+		if strLower[i:i+len(substrLower)] == substrLower {
+			return true
+		}
+	}
+	return false
+}
+
+func toLower(s string) string {
+	// Simple ASCII lowercase
+	result := make([]byte, len(s))
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		if c >= 'A' && c <= 'Z' {
+			result[i] = c + 32
+		} else {
+			result[i] = c
+		}
+	}
+	return string(result)
 }
 
 func newTextArea(theme styles.Theme) textarea.Model {
