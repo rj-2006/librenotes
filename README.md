@@ -137,3 +137,15 @@ MIT License - see [LICENSE](LICENSE) file.
 ---
 
 Made with ❤️ for the terminal lovers
+## License
+
+MIT License - see [LICENSE](LICENSE) file.
+
+## Acknowledgments
+
+- [Charm](https://charm.sh/) - For the amazing TUI ecosystem
+- [Catppuccin](https://catppuccin.com/) - For the beautiful color palettes
+
+---
+
+Made with ❤️ for the terminal lovers
