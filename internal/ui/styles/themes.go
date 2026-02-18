@@ -77,10 +77,10 @@ var (
 		Secondary:     lipgloss.Color("#8839ef"), // Mauve
 		Background:    lipgloss.Color("#eff1f5"), // Light background
 		Foreground:    lipgloss.Color("#4c4f69"), // Text
-		Accent:        lipgloss.Color("(#df8e1"), // Yellow
+		Accent:        lipgloss.Color("#df8e1f"), // Yellow
 		Success:       lipgloss.Color("#40a02b"), // Green
 		Error:         lipgloss.Color("#d20f39"), // Red
-		Warning:       lipgloss.Color("(#fe640"), // Peach
+		Warning:       lipgloss.Color("#fe640b"), // Peach
 		Muted:         lipgloss.Color("#9ca0b0"), // Overlay0
 		Border:        lipgloss.Color("#1e66f5"), // Blue border
 		Cursor:        lipgloss.Color("#8839ef"), // Mauve cursor

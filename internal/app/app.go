@@ -7,7 +7,9 @@ import (
 	"github.com/charmbracelet/bubbles/list"
 	"github.com/charmbracelet/bubbles/textarea"
 	"github.com/charmbracelet/bubbles/textinput"
+	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/glamour"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/rj-2006/librenotes/internal/config"
 	"github.com/rj-2006/librenotes/internal/storage"
@@ -69,6 +71,12 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.homepage.SetSize(msg.Width-4, msg.Height-10)
 		a.homepage.SetRecentFiles(a.recentFiles)
 
+		// Update preview viewport if active
+		if a.isPreview {
+			a.previewViewport.Width = msg.Width - 4
+			a.previewViewport.Height = msg.Height - 8
+		}
+
 	case tea.KeyMsg:
 		switch msg.Type {
 		case tea.KeyCtrlC, tea.KeyCtrlQ:
@@ -112,6 +120,11 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		case tea.KeyCtrlS:
 			return a.handleSave()
+
+		case tea.KeyCtrlP:
+			if a.state == StateEditing {
+				return a, a.togglePreview()
+			}
 		}
 	}
 
@@ -120,9 +133,16 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case StateNewFile:
 		a.newFileInput, cmd = a.newFileInput.Update(msg)
 	case StateEditing:
-		a.textarea, cmd = a.textarea.Update(msg)
-		// Update word count
-		a.statusBar.SetWordCount(a.textarea.Value())
+		if a.isPreview {
+			// Handle viewport scrolling
+			var vpCmd tea.Cmd
+			a.previewViewport, vpCmd = a.previewViewport.Update(msg)
+			cmd = vpCmd
+		} else {
+			a.textarea, cmd = a.textarea.Update(msg)
+			// Update word count
+			a.statusBar.SetWordCount(a.textarea.Value())
+		}
 	case StateList:
 		a.list, cmd = a.list.Update(msg)
 	}
@@ -142,7 +162,11 @@ func (a *App) View() string {
 	case StateNewFile:
 		content = a.newFileInput.View()
 	case StateEditing:
-		content = a.textarea.View()
+		if a.isPreview {
+			content = a.previewViewport.View()
+		} else {
+			content = a.textarea.View()
+		}
 	default:
 		content = ""
 	}
@@ -160,6 +184,12 @@ func (a *App) View() string {
 func (a *App) handleBack() (tea.Model, tea.Cmd) {
 	switch a.state {
 	case StateEditing:
+		// If in preview mode, exit preview first
+		if a.isPreview {
+			a.isPreview = false
+			a.previewViewport = viewport.Model{}
+			return a, nil
+		}
 		// Close file without saving, go back to list
 		if a.currentFile != nil {
 			a.storage.CloseNote(a.currentFile)
@@ -444,4 +474,54 @@ func newNoteList(theme styles.Theme, store *storage.Storage) list.Model {
 		Padding(0, 1)
 
 	return lst
+}
+
+func (a *App) togglePreview() tea.Cmd {
+	if a.isPreview {
+		a.isPreview = false
+		a.previewViewport = viewport.Model{}
+		return nil
+	}
+
+	// Calculate viewport dimensions
+	width := a.width - 4
+	height := a.height - 8
+	if width < 40 {
+		width = 78
+	}
+	if height < 10 {
+		height = 20
+	}
+
+	// Use raw content for proper markdown rendering
+	content := a.textarea.Value()
+
+	// Create viewport with themed border
+	vp := viewport.New(width, height)
+	vp.Style = lipgloss.NewStyle().
+		BorderStyle(lipgloss.RoundedBorder()).
+		BorderForeground(a.theme.Border).
+		PaddingRight(2)
+
+	// Create glamour renderer with word wrap
+	glamourWidth := width - vp.Style.GetHorizontalFrameSize() - 2
+	renderer, err := glamour.NewTermRenderer(
+		glamour.WithAutoStyle(),
+		glamour.WithWordWrap(glamourWidth),
+	)
+	if err != nil {
+		return nil
+	}
+
+	// Render markdown content
+	rendered, err := renderer.Render(content)
+	if err != nil {
+		return nil
+	}
+
+	vp.SetContent(rendered)
+	a.previewViewport = vp
+	a.isPreview = true
+
+	return nil
 }

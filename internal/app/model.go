@@ -6,6 +6,7 @@ import (
 	"github.com/charmbracelet/bubbles/list"
 	"github.com/charmbracelet/bubbles/textarea"
 	"github.com/charmbracelet/bubbles/textinput"
+	"github.com/charmbracelet/bubbles/viewport"
 	"github.com/rj-2006/librenotes/internal/config"
 	"github.com/rj-2006/librenotes/internal/storage"
 	"github.com/rj-2006/librenotes/internal/ui/components"
@@ -48,6 +49,10 @@ type App struct {
 	// Window dimensions
 	width  int
 	height int
+
+	// Preview mode
+	isPreview       bool
+	previewViewport viewport.Model
 }
 
 // NoteItem represents a note in the list
