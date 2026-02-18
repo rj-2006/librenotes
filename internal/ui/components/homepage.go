@@ -38,6 +38,11 @@ func (h *Homepage) SetRecentFiles(files []string) {
 	h.recentFiles = files
 }
 
+// SetTheme updates the theme without resetting selection
+func (h *Homepage) SetTheme(theme styles.Theme) {
+	h.theme = theme
+}
+
 // SetSize sets the component dimensions
 func (h *Homepage) SetSize(width, height int) {
 	h.width = width

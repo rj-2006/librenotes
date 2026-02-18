@@ -420,9 +420,8 @@ func (a *App) handleHomepageAction(action string) (tea.Model, tea.Cmd) {
 		a.config.SetTheme(themes[nextIdx])
 		a.theme = styles.GetTheme(themes[nextIdx])
 		// Update all components with new theme
-		a.homepage = components.NewHomepage(a.theme)
-		a.homepage.SetRecentFiles(a.recentFiles) // Preserve recent files
-		a.homepage.SetSize(a.width-4, a.height-10)
+		a.homepage.SetTheme(a.theme)
+		a.statusBar = components.NewStatusBar(a.theme)
 		a.statusBar = components.NewStatusBar(a.theme)
 		a.helpBar = components.NewHelpBar(a.theme)
 		a.list = newNoteList(a.theme, a.storage)
