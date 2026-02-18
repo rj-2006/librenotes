@@ -125,6 +125,32 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if a.state == StateEditing {
 				return a, a.togglePreview()
 			}
+
+		case tea.KeyDelete:
+			if a.state == StateList {
+				item, ok := a.list.SelectedItem().(NoteItem)
+				if ok && !item.isFolder {
+					// Use folderPath which contains the full relative path
+					a.fileToDelete = item.folderPath
+					a.state = StateConfirmDelete
+				}
+			}
+
+		case tea.KeyRunes:
+			if a.state == StateConfirmDelete {
+				switch msg.String() {
+				case "y", "Y":
+					if err := a.storage.DeleteNote(a.fileToDelete); err == nil {
+						a.removeFromRecentFiles(a.fileToDelete)
+						a.refreshList()
+					}
+					a.fileToDelete = ""
+					a.state = StateList
+				case "n", "N":
+					a.fileToDelete = ""
+					a.state = StateList
+				}
+			}
 		}
 	}
 
@@ -167,6 +193,12 @@ func (a *App) View() string {
 		} else {
 			content = a.textarea.View()
 		}
+	case StateConfirmDelete:
+		confirmStyle := lipgloss.NewStyle().
+			Foreground(a.theme.Error).
+			Bold(true).
+			Padding(2)
+		content = confirmStyle.Render(fmt.Sprintf("Delete '%s'?\n\n[y]es / [n]o", a.fileToDelete))
 	default:
 		content = ""
 	}
@@ -202,6 +234,7 @@ func (a *App) handleBack() (tea.Model, tea.Cmd) {
 	case StateList, StateNewFile:
 		// Go back to welcome screen
 		a.state = StateWelcome
+		a.currentFolder = "" // Reset folder navigation
 		a.homepage.SetRecentFiles(a.recentFiles)
 	case StateWelcome:
 		// Already at welcome, quit
@@ -298,31 +331,53 @@ func (a *App) openRecentFile(filename string) (tea.Model, tea.Cmd) {
 	return a, nil
 }
 
-// openSelectedNote opens the selected note from the list
+// openSelectedNote opens the selected note from the list or navigates into a folder
 func (a *App) openSelectedNote() (tea.Model, tea.Cmd) {
 	item, ok := a.list.SelectedItem().(NoteItem)
 	if !ok {
 		return a, nil
 	}
 
-	content, err := a.storage.ReadNote(item.title)
+	// Handle folder navigation
+	if item.isFolder {
+		if item.folderPath == ".." {
+			// Go up one level
+			if a.currentFolder != "" {
+				a.currentFolder = filepath.Dir(a.currentFolder)
+				if a.currentFolder == "." {
+					a.currentFolder = ""
+				}
+			}
+		} else {
+			// Enter folder
+			a.currentFolder = item.folderPath
+		}
+		a.refreshList()
+		return a, nil
+	}
+
+	// Open note - extract filename without emoji
+	// Use folderPath which contains the full relative path
+	fullPath := item.folderPath
+
+	content, err := a.storage.ReadNote(fullPath)
 	if err != nil {
 		return a, nil
 	}
 
-	file, err := a.storage.OpenNote(item.title)
+	file, err := a.storage.OpenNote(fullPath)
 	if err != nil {
 		return a, nil
 	}
 
 	a.currentFile = file
-	a.currentFileName = item.title
+	a.currentFileName = fullPath
 	a.textarea.SetValue(string(content))
-	a.statusBar.SetFileInfo(item.title, string(content))
+	a.statusBar.SetFileInfo(fullPath, string(content))
 	a.state = StateEditing
 
 	// Add to recent files
-	a.addToRecentFiles(item.title)
+	a.addToRecentFiles(fullPath)
 
 	return a, nil
 }
@@ -379,20 +434,57 @@ func (a *App) handleSave() (tea.Model, tea.Cmd) {
 
 // refreshList refreshes the note list
 func (a *App) refreshList() {
-	notes, err := a.storage.ListNotes()
+	notes, folders, err := a.storage.ListNotes(a.currentFolder)
 	if err != nil {
 		return
 	}
 
-	items := make([]list.Item, len(notes))
-	for i, note := range notes {
-		items[i] = NoteItem{
-			title:       note.Title,
-			description: note.Description,
+	// Combine folders and notes, folders first
+	items := make([]list.Item, 0, len(folders)+len(notes))
+
+	// Add ".." to go up if we're in a folder
+	if a.currentFolder != "" {
+		items = append(items, NoteItem{
+			title:       "📁 ..",
+			description: "Go up",
+			isFolder:    true,
+			folderPath:  "..",
+		})
+	}
+
+	// Add folders
+	for _, folder := range folders {
+		items = append(items, NoteItem{
+			title:       "📁 " + folder.Name,
+			description: "Folder",
+			isFolder:    true,
+			folderPath:  folder.Path,
+		})
+	}
+
+	// Add notes
+	for _, note := range notes {
+		displayTitle := note.Title
+		if a.currentFolder != "" {
+			// Show just the filename, not full path
+			displayTitle = note.Title[len(a.currentFolder)+1:]
 		}
+		items = append(items, NoteItem{
+			title:       "📝 " + displayTitle,
+			description: note.Description,
+			isFolder:    false,
+			folderPath:  note.Title, // Store full path here
+		})
 	}
 
 	a.list.SetItems(items)
+
+	// Update list title to show current folder
+	if a.currentFolder != "" {
+		a.list.Title = "📁 " + a.currentFolder
+	} else {
+		a.list.Title = "All Notes"
+	}
 }
 
 // addToRecentFiles adds a file to recent files list
@@ -411,6 +503,16 @@ func (a *App) addToRecentFiles(filename string) {
 	// Keep only last 10
 	if len(a.recentFiles) > 10 {
 		a.recentFiles = a.recentFiles[:10]
+	}
+}
+
+// removeFromRecentFiles removes a file from recent files list
+func (a *App) removeFromRecentFiles(filename string) {
+	for i, f := range a.recentFiles {
+		if f == filename {
+			a.recentFiles = append(a.recentFiles[:i], a.recentFiles[i+1:]...)
+			break
+		}
 	}
 }
 
@@ -449,14 +551,28 @@ func newTextArea(theme styles.Theme) textarea.Model {
 }
 
 func newNoteList(theme styles.Theme, store *storage.Storage) list.Model {
-	notes, _ := store.ListNotes()
+	notes, folders, _ := store.ListNotes("")
 
-	items := make([]list.Item, len(notes))
-	for i, note := range notes {
-		items[i] = NoteItem{
-			title:       note.Title,
+	// Combine folders and notes
+	items := make([]list.Item, 0, len(folders)+len(notes))
+
+	// Add folders first
+	for _, folder := range folders {
+		items = append(items, NoteItem{
+			title:       "📁 " + folder.Name,
+			description: "Folder",
+			isFolder:    true,
+			folderPath:  folder.Path,
+		})
+	}
+
+	// Add notes
+	for _, note := range notes {
+		items = append(items, NoteItem{
+			title:       "📝 " + note.Title,
 			description: note.Description,
-		}
+			isFolder:    false,
+		})
 	}
 
 	// Create delegate with theme colors

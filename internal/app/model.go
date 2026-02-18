@@ -20,6 +20,7 @@ const (
 	StateList
 	StateNewFile
 	StateEditing
+	StateConfirmDelete
 )
 
 type App struct {
@@ -53,12 +54,20 @@ type App struct {
 	// Preview mode
 	isPreview       bool
 	previewViewport viewport.Model
+
+	// Delete confirmation
+	fileToDelete string
+
+	// Folder navigation
+	currentFolder string
 }
 
-// NoteItem represents a note in the list
+// NoteItem represents a note or folder in the list
 type NoteItem struct {
 	title       string
 	description string
+	isFolder    bool
+	folderPath  string
 }
 
 // Title returns the item title for the list

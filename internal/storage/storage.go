@@ -11,8 +11,15 @@ import (
 type Note struct {
 	Title       string
 	Path        string
+	Folder      string
 	ModTime     time.Time
 	Description string
+}
+
+// Folder represents a directory in the vault
+type Folder struct {
+	Name string
+	Path string
 }
 
 // Storage handles all file operations
@@ -35,34 +42,50 @@ func (s *Storage) GetVaultDir() string {
 	return s.vaultDir
 }
 
-// ListNotes returns all notes in the vault
-func (s *Storage) ListNotes() ([]Note, error) {
-	entries, err := os.ReadDir(s.vaultDir)
+// ListNotes returns all notes in the vault (optionally filtered by folder)
+func (s *Storage) ListNotes(folder string) ([]Note, []Folder, error) {
+	searchPath := s.vaultDir
+	if folder != "" {
+		searchPath = filepath.Join(s.vaultDir, folder)
+	}
+
+	entries, err := os.ReadDir(searchPath)
 	if err != nil {
-		return nil, fmt.Errorf("can't read from directory: %w", err)
+		return nil, nil, fmt.Errorf("can't read from directory: %w", err)
 	}
 
 	var notes []Note
+	var folders []Folder
+
 	for _, entry := range entries {
 		if entry.IsDir() {
-			continue
-		}
+			folders = append(folders, Folder{
+				Name: entry.Name(),
+				Path: filepath.Join(folder, entry.Name()),
+			})
+		} else {
+			info, err := entry.Info()
+			if err != nil {
+				continue
+			}
 
-		info, err := entry.Info()
-		if err != nil {
-			continue
-		}
+			modTime := info.ModTime()
+			title := entry.Name()
+			if folder != "" {
+				title = filepath.Join(folder, entry.Name())
+			}
 
-		modTime := info.ModTime()
-		notes = append(notes, Note{
-			Title:       entry.Name(),
-			Path:        filepath.Join(s.vaultDir, entry.Name()),
-			ModTime:     modTime,
-			Description: fmt.Sprintf("Modified: %s", modTime.Format("2006-01-02 15:04")),
-		})
+			notes = append(notes, Note{
+				Title:       title,
+				Path:        filepath.Join(searchPath, entry.Name()),
+				Folder:      folder,
+				ModTime:     modTime,
+				Description: fmt.Sprintf("Modified: %s", modTime.Format("2006-01-02 15:04")),
+			})
+		}
 	}
 
-	return notes, nil
+	return notes, folders, nil
 }
 
 // ReadNote reads the content of a note
@@ -123,6 +146,12 @@ func (s *Storage) CloseNote(file *os.File) error {
 func (s *Storage) DeleteNote(filename string) error {
 	filepath := filepath.Join(s.vaultDir, filename)
 	return os.Remove(filepath)
+}
+
+// CreateFolder creates a new folder in the vault
+func (s *Storage) CreateFolder(folderName string) error {
+	folderPath := filepath.Join(s.vaultDir, folderName)
+	return os.MkdirAll(folderPath, 0755)
 }
 
 // CountWords counts words in content
