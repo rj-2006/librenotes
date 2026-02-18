@@ -21,6 +21,7 @@ const (
 	StateNewFile
 	StateEditing
 	StateConfirmDelete
+	StateSearch
 )
 
 type App struct {
@@ -60,6 +61,10 @@ type App struct {
 
 	// Folder navigation
 	currentFolder string
+
+	// Search
+	searchInput textinput.Model
+	allNotes    []list.Item // Store all notes for searching
 }
 
 // NoteItem represents a note or folder in the list
